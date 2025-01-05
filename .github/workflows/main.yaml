@@ -1,0 +1,21 @@
+name: Decompile app
+
+on:
+    push:
+        branches: [main]
+
+env:
+    APP_ID: com.facepunch.rust.companion
+jobs:
+  main:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: cargo-install
+        uses: baptiste0928/cargo-install@v3.2.0
+        with:
+          crate: apkeep
+          version: 0.17.0
+      - run: apkeep --version
