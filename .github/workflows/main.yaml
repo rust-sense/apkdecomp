@@ -1,0 +1,107 @@
+name: Decompile app
+
+on:
+  workflow_dispatch: 
+    inputs:
+      version:
+        description: 'Version of Rust+ app to decompile'
+        required: true
+        default: '0.0.23'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  create_release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_version: ${{ steps.create_release.outputs.release_version }}
+      release_url: ${{ steps.create_release.outputs.release_url }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Create release
+        id: create_release
+        run: |
+          generated_title="Rust+ v${{ inputs.version }}"
+          release_version="v${{ inputs.version }}-$(date +%Y%m%d)"
+          generated_notes="Rust+ v${{ inputs.version }}<br>Generated at $(date)"
+          release_url=$(gh release create $release_version \
+            --title "$generated_title" \
+            --notes "$generated_notes" \
+            --draft)
+          echo "release_url=$release_url" >> "$GITHUB_OUTPUT"
+          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+      - name: Print generated release URL
+        run: "echo Release URL: ${{ steps.create_release.outputs.release_url }}"
+  download_apk:
+    runs-on: ubuntu-latest
+    env:
+      APKEEP_VERSION: 0.17.0
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '23'
+      - name: Install apkeep
+        run: cargo install apkeep@$APKEEP_VERSION
+      - name: Download the APK
+        run: |
+          apkeep -a com.facepunch.rust.companion \
+          -e '${{ secrets.APKEEP_EMAIL }}' \
+          -t '${{ secrets.APKEEP_AAS_TOKEN }}' \
+          -d google-play .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: com.facepunch.rust.companion.apk
+  run_apktool:
+    runs-on: ubuntu-latest
+    env:
+      APKTOOL_VERSION: 2.10.0
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    needs: [create_release, download_apk]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+      - name: Download apktool
+        run: curl -L https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_$APKTOOL_VERSION.jar -o apktool.jar
+      - name: Decode with apktool (for smali)
+        run: java -jar apktool.jar d com.facepunch.rust.companion.apk -o apktool_out
+      - name: Zip directory
+        run: zip -r apktool_out.zip apktool_out
+      - name: Upload artifact to release
+        run: gh release upload ${{ needs.create_release.outputs.release_version }} apktool_out.zip
+  run_jadx:
+    runs-on: ubuntu-latest
+    env:
+      JADX_VERSION: 1.5.1
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    needs: [create_release, download_apk]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+      - name: Download jadx
+        run: curl -L https://github.com/skylot/jadx/releases/download/v$JADX_VERSION/jadx-$JADX_VERSION.zip -o jadx.zip
+      - name: Unzip jadx
+        run: unzip jadx.zip -d jadx
+      - name: Decompile with jadx (for java)
+        continue-on-error: true
+        run: |
+          jadx/bin/jadx com.facepunch.rust.companion.apk \
+            -d jadx_out --log-level error
+      - name: Zip directory
+        run: zip -r jadx_out.zip jadx_out
+      - name: Upload artifact to release
+        run: gh release upload ${{ needs.create_release.outputs.release_version }} jadx_out.zip
