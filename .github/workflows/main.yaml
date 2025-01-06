@@ -105,3 +105,10 @@ jobs:
         run: zip -r jadx_out.zip jadx_out
       - name: Upload artifact to release
         run: gh release upload ${{ needs.create_release.outputs.release_version }} jadx_out.zip
+      - name: Create branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./jadx_out
+          publish_branch: ${{ needs.create_release.outputs.release_version }}
+          force_orphan: true
