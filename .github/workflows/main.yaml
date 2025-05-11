@@ -6,7 +6,11 @@ on:
       version:
         description: 'Version of Rust+ app to decompile'
         required: true
-        default: '0.0.23'
+        default: '0.0.32'
+      create_release:
+        description: 'Create a release on GitHub'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -15,6 +19,7 @@ permissions:
 jobs:
   create_release:
     runs-on: ubuntu-latest
+    if: ${{ inputs.create_release == 'true' }}
     outputs:
       release_version: ${{ steps.create_release.outputs.release_version }}
       release_url: ${{ steps.create_release.outputs.release_url }}
@@ -65,7 +70,7 @@ jobs:
     env:
       APKTOOL_VERSION: 2.10.0
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    needs: [create_release, download_apk]
+    needs: [download_apk]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -76,16 +81,21 @@ jobs:
         run: curl -L https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_$APKTOOL_VERSION.jar -o apktool.jar
       - name: Decode with apktool (for smali)
         run: java -jar apktool.jar d com.facepunch.rust.companion.apk -o apktool_out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apktool_out
+          path: apktool_out
       - name: Zip directory
         run: zip -r apktool_out.zip apktool_out
       - name: Upload artifact to release
+        if: ${{ inputs.create_release == 'true' }}
         run: gh release upload ${{ needs.create_release.outputs.release_version }} apktool_out.zip
   run_jadx:
     runs-on: ubuntu-latest
     env:
       JADX_VERSION: 1.5.1
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    needs: [create_release, download_apk]
+    needs: [download_apk]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -101,11 +111,17 @@ jobs:
         run: |
           jadx/bin/jadx com.facepunch.rust.companion.apk \
             -d jadx_out --log-level error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jadx_out
+          path: jadx_out
       - name: Zip directory
         run: zip -r jadx_out.zip jadx_out
       - name: Upload artifact to release
+        if: ${{ inputs.create_release == 'true' }}
         run: gh release upload ${{ needs.create_release.outputs.release_version }} jadx_out.zip
       - name: Create branch
+        if: ${{ inputs.create_release == 'true' }}
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
