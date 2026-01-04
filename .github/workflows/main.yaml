@@ -53,17 +53,21 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '23'
-      - name: Cache Rust and cargo
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+      - name: Cache cargo registry and apkeep
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/
+            ~/.cargo/bin/apkeep
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
           key: ${{ runner.os }}-cargo-apkeep-${{ env.APKEEP_VERSION }}
       - name: Install apkeep
-        run: cargo install apkeep@$APKEEP_VERSION
+        run: cargo install apkeep --version ${{ env.APKEEP_VERSION }}
       - name: Download the APK
         run: |
           apkeep -a com.facepunch.rust.companion \
