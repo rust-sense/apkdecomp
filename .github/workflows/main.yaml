@@ -60,6 +60,7 @@ jobs:
           apkeep -a com.facepunch.rust.companion \
           -e '${{ secrets.APKEEP_EMAIL }}' \
           -t '${{ secrets.APKEEP_AAS_TOKEN }}' \
+          -o device=px_9a \
           -d google-play .
       - uses: actions/upload-artifact@v4
         with:
