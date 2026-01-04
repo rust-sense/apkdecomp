@@ -19,7 +19,7 @@ permissions:
 jobs:
   create_release:
     runs-on: ubuntu-latest
-    if: ${{ inputs.create_release == 'true' }}
+    if: ${{ inputs.create_release }}
     outputs:
       release_version: ${{ steps.create_release.outputs.release_version }}
       release_url: ${{ steps.create_release.outputs.release_url }}
@@ -89,7 +89,7 @@ jobs:
       - name: Zip directory
         run: zip -r apktool_out.zip apktool_out
       - name: Upload artifact to release
-        if: ${{ inputs.create_release == 'true' }}
+        if: ${{ inputs.create_release }}
         run: gh release upload ${{ needs.create_release.outputs.release_version }} apktool_out.zip
   run_jadx:
     runs-on: ubuntu-latest
@@ -119,10 +119,10 @@ jobs:
       - name: Zip directory
         run: zip -r jadx_out.zip jadx_out
       - name: Upload artifact to release
-        if: ${{ inputs.create_release == 'true' }}
+        if: ${{ inputs.create_release }}
         run: gh release upload ${{ needs.create_release.outputs.release_version }} jadx_out.zip
       - name: Create branch
-        if: ${{ inputs.create_release == 'true' }}
+        if: ${{ inputs.create_release }}
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
