@@ -71,7 +71,8 @@ jobs:
     env:
       APKTOOL_VERSION: 2.10.0
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    needs: [download_apk]
+    needs: [create_release, download_apk]
+    if: ${{ always() && needs.download_apk.result == 'success' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -96,7 +97,8 @@ jobs:
     env:
       JADX_VERSION: 1.5.1
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    needs: [download_apk]
+    needs: [create_release, download_apk]
+    if: ${{ always() && needs.download_apk.result == 'success' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
