@@ -53,6 +53,15 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '23'
+      - name: Cache Rust and cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-apkeep-${{ env.APKEEP_VERSION }}
       - name: Install apkeep
         run: cargo install apkeep@$APKEEP_VERSION
       - name: Download the APK
@@ -66,6 +75,7 @@ jobs:
         with:
           name: apk
           path: com.facepunch.rust.companion.apk
+          retention-days: 1
   run_apktool:
     runs-on: ubuntu-latest
     env:
@@ -76,9 +86,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '23'
       - uses: actions/download-artifact@v4
         with:
           name: apk
+      - name: Cache apktool
+        uses: actions/cache@v4
+        with:
+          path: apktool.jar
+          key: apktool-${{ env.APKTOOL_VERSION }}
       - name: Download apktool
         run: curl -L https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_$APKTOOL_VERSION.jar -o apktool.jar
       - name: Decode with apktool (for smali)
@@ -87,6 +106,7 @@ jobs:
         with:
           name: apktool_out
           path: apktool_out
+          retention-days: 1
       - name: Zip directory
         run: zip -r apktool_out.zip apktool_out
       - name: Upload artifact to release
@@ -102,9 +122,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '23'
       - uses: actions/download-artifact@v4
         with:
           name: apk
+      - name: Cache jadx
+        uses: actions/cache@v4
+        with:
+          path: jadx.zip
+          key: jadx-${{ env.JADX_VERSION }}
       - name: Download jadx
         run: curl -L https://github.com/skylot/jadx/releases/download/v$JADX_VERSION/jadx-$JADX_VERSION.zip -o jadx.zip
       - name: Unzip jadx
@@ -118,6 +147,7 @@ jobs:
         with:
           name: jadx_out
           path: jadx_out
+          retention-days: 1
       - name: Zip directory
         run: zip -r jadx_out.zip jadx_out
       - name: Upload artifact to release
