@@ -4,8 +4,7 @@
   "description": "Extract protobuf definitions from Hermes bytecode bundles",
   "type": "module",
   "scripts": {
-    "extract": "bun extract-proto.ts",
-    "test": "bun extract-proto.ts artifacts/1/apk/assets/index.android.bundle artifacts/1/rustplus-generated.proto"
+    "extract": "bun extract-proto.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
