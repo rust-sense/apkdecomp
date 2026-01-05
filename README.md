@@ -1,4 +1,3 @@
 # apkdecomp
 
-To run locally, run the `run-act.sh` script.
-To run on GitHub and create a public release, run the `Decompile app` workflow.
+To test locally, run `run-act.sh`. Make sure you have act properly setup so the github actions workflow can be run.

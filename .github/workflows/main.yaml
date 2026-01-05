@@ -57,17 +57,8 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache: false
-      - name: Cache cargo registry and apkeep
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/apkeep
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: ${{ runner.os }}-cargo-apkeep-${{ env.APKEEP_VERSION }}
       - name: Install apkeep
-        run: cargo install apkeep --version ${{ env.APKEEP_VERSION }}
+        run: cargo install apkeep --version ${{ env.APKEEP_VERSION }} --force
       - name: Download the APK
         run: |
           apkeep -a com.facepunch.rust.companion \
@@ -165,3 +156,61 @@ jobs:
           publish_dir: ./jadx_out
           publish_branch: ${{ needs.create_release.outputs.release_version }}
           force_orphan: true
+  run_hermes_dec:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    needs: [create_release, download_apk]
+    if: ${{ always() && needs.download_apk.result == 'success' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install hermes-dec
+        run: pip install git+https://github.com/P1sec/hermes-dec
+      - name: Extract Hermes bundle from APK
+        run: unzip -j com.facepunch.rust.companion.apk assets/index.android.bundle -d .
+      - name: Decompile Hermes bundle
+        run: hbc-decompiler index.android.bundle decompiled.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hermes_decompiled
+          path: decompiled.js
+          retention-days: 1
+      - name: Compress decompiled output
+        run: gzip -k decompiled.js
+      - name: Upload artifact to release
+        if: ${{ inputs.create_release }}
+        run: gh release upload ${{ needs.create_release.outputs.release_version }} decompiled.js.gz
+  extract_proto:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    needs: [create_release, run_hermes_dec]
+    if: ${{ always() && needs.run_hermes_dec.result == 'success' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: hermes_decompiled
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Extract protobuf definitions
+        run: bun extract-proto.ts decompiled.js rustplus rustplus.proto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proto
+          path: rustplus.proto
+          retention-days: 1
+      - name: Upload artifact to release
+        if: ${{ inputs.create_release }}
+        run: gh release upload ${{ needs.create_release.outputs.release_version }} rustplus.proto

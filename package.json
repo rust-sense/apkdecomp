@@ -1,0 +1,14 @@
+{
+  "name": "apkdecomp-proto-extractor",
+  "version": "1.0.0",
+  "description": "Extract protobuf definitions from Hermes bytecode bundles",
+  "type": "module",
+  "scripts": {
+    "extract": "bun extract-proto.ts",
+    "test": "bun extract-proto.ts artifacts/1/apk/assets/index.android.bundle artifacts/1/rustplus-generated.proto"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^20.10.0"
+  }
+}
