@@ -206,6 +206,12 @@ jobs:
           bun-version: latest
       - name: Extract protobuf definitions
         run: bun extract-proto.ts decompiled.js rustplus rustplus.proto
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+      - name: Validate proto file compiles
+        run: protoc --proto_path=. --descriptor_set_out=/dev/null rustplus.proto
       - uses: actions/upload-artifact@v4
         with:
           name: proto
