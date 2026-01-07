@@ -15,3 +15,6 @@ unzip artifacts/1/proto/proto.zip
 
 unzip -o artifacts/1/hermes_decompiled/hermes_decompiled.zip \
   -d artifacts/1/hermes_decompiled/
+
+unzip -o artifacts/1/proto/proto.zip \
+  -d artifacts/1/proto/
