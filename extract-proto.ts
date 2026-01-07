@@ -61,8 +61,36 @@ const fieldTypeHints = new Map<string, Map<string, string>>(); // MessageName ->
 // Track which fields use enum types
 const enumTypeFields = new Map<string, Map<string, string>>(); // MessageName -> (fieldName -> enumTypeName)
 
-// Track message nesting relationships
-const messageNesting = new Map<string, string>(); // ChildMessage -> ParentMessage
+// Track message nesting relationships - supports multiple parents per child name
+// Key: "ParentMessage.ChildMessage", Value: ParentMessage
+const messageNesting = new Map<string, string>(); // "Parent.Child" -> ParentMessage
+
+// Helper to check if a type should be nested under a parent
+function getNestingParent(childName: string, parentHint?: string): string | null {
+  // If we have a parent hint from the encoding context, check that specific nesting
+  if (parentHint) {
+    const key = `${parentHint}.${childName}`;
+    if (messageNesting.has(key)) {
+      return messageNesting.get(key)!;
+    }
+  }
+
+  // Otherwise, look for any nesting of this child name
+  for (const [key, parent] of messageNesting.entries()) {
+    if (key.endsWith(`.${childName}`)) {
+      return parent;
+    }
+  }
+  return null;
+}
+
+// Helper to record a nesting relationship
+function recordNesting(parentType: string, childType: string): void {
+  const key = `${parentType}.${childType}`;
+  if (!messageNesting.has(key)) {
+    messageNesting.set(key, parentType);
+  }
+}
 
 // ============================================================================
 // Pre-extraction: Parse error messages to discover structure
@@ -90,7 +118,7 @@ function parseProtobufErrorMessages(content: string): void {
     // If path has multiple parts, record nesting relationship
     if (pathParts.length > 1) {
       const parentName = pathParts.slice(0, -1).join('.');
-      messageNesting.set(messageName, parentName);
+      recordNesting(parentName, messageName);
     }
 
     // Track repeated fields
@@ -114,6 +142,7 @@ function parseProtobufErrorMessages(content: string): void {
  * Example: r2.ProtoBuf; r2 = r2.ClanInfo; r9 = r2.Role; r8 = r9.encode
  * 
  * This captures cases like ClanInfo.Role, AppMarker.SellOrder, etc.
+ * NOTE: The same child type name can exist in multiple parents (e.g., Member in ClanInfo and AppTeamInfo)
  */
 function discoverMessageNesting(content: string): void {
   // Pattern 1: Standard format
@@ -123,9 +152,9 @@ function discoverMessageNesting(content: string): void {
     const parentType = match[1];
     const childType = match[2];
 
-    // Avoid false positives
-    if (parentType !== childType && childType !== 'encode' && !messageNesting.has(childType)) {
-      messageNesting.set(childType, parentType);
+    // Avoid false positives but allow same child name in different parents
+    if (parentType !== childType && childType !== 'encode') {
+      recordNesting(parentType, childType);
     }
   }
 
@@ -137,8 +166,8 @@ function discoverMessageNesting(content: string): void {
     const parentType = match[1];
     const childType = match[2];
 
-    if (parentType !== childType && !messageNesting.has(childType)) {
-      messageNesting.set(childType, parentType);
+    if (parentType !== childType) {
+      recordNesting(parentType, childType);
     }
   }
 }
@@ -147,6 +176,7 @@ function discoverMessageNesting(content: string): void {
  * Discover ENUM nesting relationships from toObject function patterns.
  * 
  * When an enum is nested inside a message, the code accesses it as:
+ *   r? = _closure...;  // optional
  *   r? = r?.ProtoBuf;
  *   r? = r?.ParentMessage;
  *   r? = r?.EnumName;
@@ -156,23 +186,25 @@ function discoverMessageNesting(content: string): void {
  * then from that SAME register, we access the EnumName.
  * 
  * Example from decompiled code:
+ *   r4 = _closure1_slot4;
  *   r4 = r4.ProtoBuf;
  *   r4 = r4.AppCameraRays;
  *   r5 = r4.EntityType;
  *   r2 = r5[r4];
  */
 function discoverEnumNesting(content: string): void {
-  // Pattern: r? = r?.ProtoBuf; r? = r?.ParentMessage; r? = r?.EnumName; r? = r?[r?]
-  // Note: The parent and enum access happen from the same register
-  const enumNestingPattern = /r(\d+)\s*=\s*r\d+\.ProtoBuf;\s*r\1\s*=\s*r\1\.([A-Z][A-Za-z0-9_]*);\s*r\d+\s*=\s*r\1\.([A-Z][A-Za-z0-9_]*(?:Type|Kind|Status|State|Mode|Role|Level|Category|Flag|Icon|Index))/g;
+  // Pattern: r? = r?.ProtoBuf; r? = r?.ParentMessage; r? = r?.EnumName
+  // The parent register must match between ProtoBuf, ParentMessage, and EnumName access
+  // Allow some content between lines (for case labels, etc.)
+  const enumNestingPattern = /r(\d+)\s*=\s*r\1\.ProtoBuf;[\s\S]{0,50}?r\1\s*=\s*r\1\.([A-Z][A-Za-z0-9_]*);[\s\S]{0,50}?r\d+\s*=\s*r\1\.([A-Z][A-Za-z0-9_]*(?:Type|Kind|Status|State|Mode|Role|Level|Category|Flag|Icon|Index))/g;
 
   for (const match of content.matchAll(enumNestingPattern)) {
     const parentType = match[2];
     const enumName = match[3];
 
-    // Only nest if we haven't already found a parent for this enum
-    if (parentType !== enumName && !messageNesting.has(enumName)) {
-      messageNesting.set(enumName, parentType);
+    // Allow same enum name to be nested in multiple parents
+    if (parentType !== enumName) {
+      recordNesting(parentType, enumName);
     }
   }
 }
@@ -758,8 +790,8 @@ function extractEnums(content: string, protobufSectionStart: number, protobufSec
     if (values.length >= 1) {
       seenEnums.add(enumName);
 
-      // Check if this enum should be nested
-      const parentName = messageNesting.get(enumName) || null;
+      // Check if this enum should be nested (use getNestingParent helper)
+      const parentName = getNestingParent(enumName);
 
       enums.push({
         name: enumName,
@@ -914,7 +946,21 @@ function extractEnumValuesWithRegisters(
 // ============================================================================
 
 /**
+ * Build a reverse lookup: for each child name, get all parents it's nested under
+ */
+function getParentsForChild(childName: string): string[] {
+  const parents: string[] = [];
+  for (const [key, parent] of messageNesting.entries()) {
+    if (key.endsWith(`.${childName}`)) {
+      parents.push(parent);
+    }
+  }
+  return parents;
+}
+
+/**
  * Build the nested structure of messages and enums
+ * When the same child name is nested under multiple parents, create a copy for each parent.
  */
 function buildNestedStructure(
   messages: Array<{ name: string; fields: FieldInfo[] }>,
@@ -923,16 +969,53 @@ function buildNestedStructure(
 
   // First, create MessageInfo for all messages
   const messageMap = new Map<string, MessageInfo>();
+  // Track which messages have been nested into a parent
+  const nestedMessages = new Set<string>();
 
+  // Create all base message infos first (with null parent initially)
   for (const msg of messages) {
     messageMap.set(msg.name, {
       name: msg.name,
       fullName: msg.name,
-      parentName: messageNesting.get(msg.name) || null,
+      parentName: null,
       fields: msg.fields,
       nestedMessages: [],
       nestedEnums: [],
     });
+  }
+
+  // Now process nesting relationships
+  for (const [key, parent] of messageNesting.entries()) {
+    // Key format: "Parent.Child"
+    const dotIdx = key.lastIndexOf('.');
+    if (dotIdx === -1) continue;
+    const childName = key.substring(dotIdx + 1);
+
+    // Skip if this child isn't in our messages
+    if (!messageMap.has(childName)) continue;
+
+    // Skip if parent isn't in our messages  
+    if (!messageMap.has(parent)) continue;
+
+    const parentMsg = messageMap.get(parent)!;
+    const childMsg = messageMap.get(childName)!;
+
+    // Check if we already nested this exact child under this parent
+    const alreadyNested = parentMsg.nestedMessages.some(m => m.name === childName);
+    if (alreadyNested) continue;
+
+    // Create a copy of the child for this parent
+    const childCopy: MessageInfo = {
+      name: childName,
+      fullName: `${parent}.${childName}`,
+      parentName: parent,
+      fields: [...childMsg.fields], // shallow copy of fields
+      nestedMessages: [], // nested children will be separate
+      nestedEnums: [],
+    };
+
+    parentMsg.nestedMessages.push(childCopy);
+    nestedMessages.add(childName);
   }
 
   // Nest enums into their parent messages
@@ -945,12 +1028,14 @@ function buildNestedStructure(
     }
   }
 
-  // Nest messages into their parent messages
+  // Messages that are ONLY nested (all uses are via Parent.Child) should not be top-level
+  // Messages that have at least one nesting should be checked if all their uses are nested
   const topLevelMessages: MessageInfo[] = [];
   for (const msg of messageMap.values()) {
-    if (msg.parentName && messageMap.has(msg.parentName)) {
-      messageMap.get(msg.parentName)!.nestedMessages.push(msg);
-    } else {
+    // If this message was copied into parents, check if it should also be top-level
+    // For now, only include as top-level if it's NOT nested anywhere
+    // (messages that are nested get copies inside their parents)
+    if (!nestedMessages.has(msg.name)) {
       topLevelMessages.push(msg);
     }
   }
@@ -997,7 +1082,6 @@ function generateEnum(enumDef: EnumInfo, indent: number): string {
   const minValue = Math.min(...enumDef.values.map(v => v.value));
 
   // Add Reserved = 0 if enum starts at 1 and doesn't have a 0 value
-  // Exception: AppMarkerType already has Undefined = 0
   if (!hasZeroValue && minValue === 1) {
     proto += `${pad}  Reserved = 0;\n`;
   }

@@ -12,3 +12,6 @@ gh act \
   "$@" | tee run-act.log
 
 unzip artifacts/1/proto/proto.zip
+
+unzip -o artifacts/1/hermes_decompiled/hermes_decompiled.zip \
+  -d artifacts/1/hermes_decompiled/
